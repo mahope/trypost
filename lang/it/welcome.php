@@ -47,10 +47,9 @@ return [
     ],
     'plan_title' => 'Attiva il tuo account',
     'plan_description' => 'Collega i tuoi canali e programma il tuo primo post oggi.',
-    'plan_first_month' => 'per il primo mese',
-    'plan_terms' => 'Poi :price/mese. Disdici quando vuoi.',
-    'plan_per_month' => 'al mese',
-    'plan_cancel_anytime' => 'Disdici quando vuoi.',
+    'plan_terms' => 'Poi :price/mese. Disdici quando vuoi',
+    'plan_checkout_button' => 'Attiva il mio account',
+    'plan_cancel_anytime' => 'Disdici quando vuoi',
     'mcp' => [
         'title' => 'Gestisci i social dalla chat',
         'description' => 'Crea, programma e analizza i post su TryPost con la tua IA preferita.',

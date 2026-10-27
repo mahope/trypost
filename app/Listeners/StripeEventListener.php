@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Listeners;
 
+use App\Actions\Offer\RedeemOffer;
 use App\Enums\PostHog\BillingEvent;
 use App\Jobs\PostHog\TrackBilling;
 use App\Jobs\PostHog\TrackCheckoutCompleted;
@@ -13,6 +14,8 @@ use App\Jobs\PostHog\TrackTrialStarted;
 use App\Models\Account;
 use App\Models\Plan;
 use App\Services\PostHogService;
+use App\Support\Billing\ConfigureSubscriptionCheckout;
+use App\Support\Billing\StripeValue;
 use App\Support\Billing\SubscriptionPlanSync;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -61,7 +64,7 @@ class StripeEventListener
 
     /**
      * A subscription is born either `trialing` (card-required trial, no charge
-     * yet) or `active` (first-month coupon or no trial, charged at once): two
+     * yet) or `active` (an offer without a trial, or no offer, charged at once): two
      * business events, see App\Support\StripeSubscriptionConversion.
      *
      * @param  array<string, mixed>  $payload
@@ -69,11 +72,14 @@ class StripeEventListener
     protected function handleSubscriptionCreated(Account $account, array $payload): void
     {
         $previousPlan = $account->plan?->name;
+        $convertsTrialWithoutCard = $this->convertsTrialWithoutCard($account, $payload);
 
-        $this->syncPlanFromSubscription($account, $payload, clearGenericTrial: true);
+        $this->syncPlanFromSubscription($account, $payload);
         $this->recordFirstPayment($account, $payload);
+        $this->redeemOffer($account, $payload);
 
         TrackBilling::dispatchIf(PostHogService::shouldTrack(), (string) $account->id, BillingEvent::Created, $payload, $previousPlan);
+        TrackTrialConverted::dispatchIf(PostHogService::shouldTrack() && $convertsTrialWithoutCard, (string) $account->id, $payload, withRevenue: false);
         TrackTrialStarted::dispatchIf(PostHogService::shouldTrack() && $this->currentStatus($payload) === StripeSubscription::STATUS_TRIALING, (string) $account->id, $payload);
         TrackCheckoutCompleted::dispatchIf(PostHogService::shouldTrack() && $this->currentStatus($payload) === StripeSubscription::STATUS_ACTIVE, (string) $account->id, $payload);
     }
@@ -84,12 +90,14 @@ class StripeEventListener
     protected function handleSubscriptionUpdated(Account $account, array $payload): void
     {
         $previousPlan = $account->plan?->name;
+        $convertsTrialWithoutCard = $this->convertsTrialWithoutCard($account, $payload);
 
         $this->syncPlanFromSubscription($account, $payload);
         $this->recordFirstPayment($account, $payload);
+        $this->redeemOffer($account, $payload);
 
         TrackBilling::dispatchIf(PostHogService::shouldTrack(), (string) $account->id, BillingEvent::Updated, $payload, $previousPlan);
-        TrackTrialConverted::dispatchIf(PostHogService::shouldTrack() && $this->convertedFromTrial($payload) && $this->isNowActive($payload), (string) $account->id, $payload);
+        TrackTrialConverted::dispatchIf(PostHogService::shouldTrack() && (($this->convertedFromTrial($payload) && $this->isNowActive($payload)) || $convertsTrialWithoutCard), (string) $account->id, $payload);
         TrackPlanChanged::dispatchIf(PostHogService::shouldTrack() && $this->priceChanged($payload), (string) $account->id, $payload);
     }
 
@@ -98,13 +106,13 @@ class StripeEventListener
      */
     protected function handleSubscriptionDeleted(Account $account, array $payload): void
     {
-        if ($account->plan_id === null && ! $account->hasPaidSubscription()) {
+        if (blank($account->plan_id) && ! $account->hasPaidSubscription()) {
             return;
         }
 
         $previousPlan = $account->plan?->name;
 
-        if ($account->plan_id !== null) {
+        if (filled($account->plan_id) && ! $account->onGenericTrial()) {
             $account->update(['plan_id' => null]);
         }
 
@@ -148,6 +156,42 @@ class StripeEventListener
     }
 
     /**
+     * A subscription created during a trial without a card the account took
+     * from an offer (`Account::subscribedDuringTrialWithoutCard()`) turns
+     * active: on created, or when an incomplete one is paid. The conversion is
+     * claimed atomically per subscription, so its created and updated webhooks
+     * handled at the same time count it once.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function convertsTrialWithoutCard(Account $account, array $payload): bool
+    {
+        if (! $this->startsActive($payload)) {
+            return false;
+        }
+
+        $subscriptionId = data_get($payload, 'data.object.id', $account->id);
+        $subscribedAt = StripeValue::timestamp(data_get($payload, 'data.object.created')) ?? now();
+
+        return $account->subscribedDuringTrialWithoutCard($subscribedAt)
+            && Cache::add("posthog:trial_converted:{$subscriptionId}", true, now()->addDay());
+    }
+
+    /**
+     * The subscription turns active now: created active, or paid after it was
+     * created incomplete. A renewal or a plan change of an active one is not.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function startsActive(array $payload): bool
+    {
+        return $this->isNowActive($payload) && (
+            data_get($payload, 'type') === StripeEvent::TYPE_CUSTOMER_SUBSCRIPTION_CREATED
+            || data_get($payload, 'data.previous_attributes.status') === StripeSubscription::STATUS_INCOMPLETE
+        );
+    }
+
+    /**
      * The first time a subscription is active the account has been charged:
      * kept on the account because Cashier clears `trial_ends_at` on delete.
      *
@@ -165,7 +209,7 @@ class StripeEventListener
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function syncPlanFromSubscription(Account $account, array $payload, bool $clearGenericTrial = false): void
+    private function syncPlanFromSubscription(Account $account, array $payload): void
     {
         $status = $this->currentStatus($payload);
 
@@ -176,18 +220,12 @@ class StripeEventListener
                 return;
             }
 
-            $attributes = ['plan_id' => $plan->id];
-
-            if ($clearGenericTrial) {
-                $attributes['trial_ends_at'] = null;
-            }
-
-            $account->update($attributes);
+            $account->update(['plan_id' => $plan->id]);
 
             return;
         }
 
-        if (SubscriptionPlanSync::clears($status) && $account->plan_id !== null) {
+        if (SubscriptionPlanSync::clears($status) && filled($account->plan_id) && ! $account->onGenericTrial()) {
             $account->update(['plan_id' => null]);
         }
     }
@@ -216,6 +254,21 @@ class StripeEventListener
         }
 
         return $plan;
+    }
+
+    /**
+     * An offer is used once its subscription is active or trialing: an
+     * incomplete one may never be paid, and would use up a place for nothing.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function redeemOffer(Account $account, array $payload): void
+    {
+        if (! SubscriptionPlanSync::allows($this->currentStatus($payload))) {
+            return;
+        }
+
+        RedeemOffer::execute($account, data_get($payload, ['data', 'object', 'metadata', ConfigureSubscriptionCheckout::OFFER_METADATA_KEY]));
     }
 
     /**

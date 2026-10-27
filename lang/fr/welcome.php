@@ -47,10 +47,9 @@ return [
     ],
     'plan_title' => 'Activez votre compte',
     'plan_description' => 'Connectez vos réseaux et programmez votre premier post dès aujourd’hui.',
-    'plan_first_month' => 'pour le premier mois',
-    'plan_terms' => 'Puis :price/mois. Annulez à tout moment.',
-    'plan_per_month' => 'par mois',
-    'plan_cancel_anytime' => 'Annulez à tout moment.',
+    'plan_terms' => 'Puis :price/mois. Annulez à tout moment',
+    'plan_checkout_button' => 'Activer mon compte',
+    'plan_cancel_anytime' => 'Annulez à tout moment',
     'mcp' => [
         'title' => 'Gérez vos réseaux par chat',
         'description' => 'Créez, planifiez et analysez vos posts TryPost avec votre IA préférée.',

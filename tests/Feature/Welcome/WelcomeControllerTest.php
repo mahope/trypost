@@ -2,16 +2,21 @@
 
 declare(strict_types=1);
 
+use App\Actions\Billing\StartGenericTrial;
 use App\Actions\Billing\StartSubscriptionCheckout;
 use App\Enums\Plan\Slug;
 use App\Enums\PostHog\CheckoutEvent;
+use App\Enums\PostHog\TrialEvent;
 use App\Enums\PostHog\WelcomeEvent;
 use App\Enums\User\Goal;
 use App\Enums\User\Locale;
 use App\Enums\User\Persona;
 use App\Enums\User\PreviousSoftware;
+use App\Jobs\PostHog\CaptureAccountEvent;
 use App\Jobs\PostHog\SendEvent;
+use App\Jobs\PostHog\SyncUser;
 use App\Models\Account;
+use App\Models\Offer;
 use App\Models\Plan;
 use App\Models\SocialAccount;
 use App\Models\User;
@@ -196,24 +201,31 @@ test('plan shows the Socials plan', function () {
         );
 });
 
-test('plan offers the first month only when checkout will apply the coupon', function (Closure $setup, bool $offered) {
-    config(['cashier.first_month_coupon_ids.socials' => 'coupon_socials']);
+test('plan sends a claimed trial offer only to an account that may use it', function (Closure $setup, bool $claims, bool $offered) {
+    $trial = Offer::factory()->freeTrial()->create();
     completeWelcomeThroughSoftware($this->user);
     $setup($this->user);
+
+    if ($claims) {
+        $this->user->account->offers()->attach($trial, ['claimed_at' => now()]);
+    }
 
     $this->actingAs($this->user->fresh())
         ->get(route('app.welcome.plan'))
         ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('firstMonthOffer', $offered));
+        ->assertInertia(fn ($page) => $offered
+            ? $page->where('offer.key', 'ft7d')
+            : $page->where('offer', null));
 })->with([
-    'first-time subscriber' => [fn () => null, true],
+    'no claim pays the full price' => [fn () => null, false, false],
+    'first-time subscriber' => [fn () => null, true, true],
     'retrying an incomplete checkout' => [fn (User $user) => $user->account->subscriptions()->create([
         'type' => Account::SUBSCRIPTION_NAME,
         'stripe_id' => 'sub_incomplete',
         'stripe_status' => 'incomplete',
         'stripe_price' => 'price_monthly_test',
         'quantity' => 1,
-    ]), true],
+    ]), true, true],
     'former subscriber' => [fn (User $user) => $user->account->subscriptions()->create([
         'type' => Account::SUBSCRIPTION_NAME,
         'stripe_id' => 'sub_canceled',
@@ -221,8 +233,7 @@ test('plan offers the first month only when checkout will apply the coupon', fun
         'stripe_price' => 'price_monthly_test',
         'quantity' => 1,
         'ends_at' => now()->subDay(),
-    ]), false],
-    'no coupon configured' => [fn () => config(['cashier.first_month_coupon_ids.socials' => '']), false],
+    ]), true, false],
 ]);
 
 test('plan store sends the owner to Stripe checkout on the Socials monthly price', function () {
@@ -246,33 +257,6 @@ test('plan store sends the owner to Stripe checkout on the Socials monthly price
         ->post(route('app.welcome.plan.store'))
         ->assertRedirect('https://checkout.stripe.test/session');
 });
-
-test('checkout.started records whether the first-month offer was shown', function (string $couponId, bool $offered) {
-    config([
-        'services.posthog.enabled' => true,
-        'services.posthog.api_key' => 'phc_test',
-        'cashier.first_month_coupon_ids.socials' => $couponId,
-    ]);
-    Bus::fake();
-    completeWelcomeThroughSoftware($this->user);
-    Plan::where('slug', Slug::Socials)->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
-
-    $this->mock(StartSubscriptionCheckout::class)
-        ->shouldReceive('redirect')
-        ->once()
-        ->andReturn(redirect('https://checkout.stripe.test/session'));
-
-    $this->actingAs($this->user->fresh())
-        ->post(route('app.welcome.plan.store'))
-        ->assertRedirect('https://checkout.stripe.test/session');
-
-    Bus::assertDispatched(SendEvent::class, fn (SendEvent $event): bool => $event->method === 'capture'
-        && data_get($event->payload, 'event') === CheckoutEvent::Started->value
-        && data_get($event->payload, 'properties.is_first_month_offer') === $offered);
-})->with([
-    'with the coupon' => ['coupon_socials', true],
-    'without the coupon' => ['', false],
-]);
 
 test('picking an AI app on the MCP step records which one', function (string $client) {
     config(['services.posthog.enabled' => true, 'services.posthog.api_key' => 'phc_test']);
@@ -324,7 +308,7 @@ test('skipping the MCP step without app access goes back to Welcome and records 
 
     $this->actingAs($this->user)
         ->get(route('app.welcome.mcp.skip'))
-        ->assertRedirect(route('app.welcome.persona'));
+        ->assertRedirect(route('app.welcome.plan'));
 
     Bus::assertNotDispatched(SendEvent::class);
 });
@@ -396,7 +380,7 @@ test('the MCP step sends an account without app access back to Welcome', functio
 
     $this->actingAs($this->user->fresh())
         ->get(route('app.welcome.mcp'))
-        ->assertRedirect(route('app.welcome.persona'));
+        ->assertRedirect(route('app.welcome.plan'));
 });
 
 test('plan store fails loudly when the Socials price is not configured', function () {
@@ -451,7 +435,7 @@ test('completed welcome steps remain reachable when going back', function () {
         ->assertInertia(fn ($page) => $page->component('welcome/Plan', false));
 });
 
-test('welcome funnel captures every step before checkout.started', function () {
+test('welcome funnel captures every step up to the plan, in order', function () {
     config(['services.posthog.enabled' => true, 'services.posthog.api_key' => 'phc_test']);
     Bus::fake();
     $workspace = attachCurrentWorkspace($this->user);
@@ -483,7 +467,7 @@ test('welcome funnel captures every step before checkout.started', function () {
         ->post(route('app.welcome.plan.store'))
         ->assertRedirect('https://checkout.stripe.test/session');
 
-    $funnel = WelcomeEvent::funnel();
+    $funnel = array_values(array_diff(WelcomeEvent::funnel(), [CheckoutEvent::Started->value]));
 
     $captured = collect(Bus::dispatched(SendEvent::class))
         ->filter(fn (SendEvent $event): bool => $event->method === 'capture')
@@ -524,21 +508,6 @@ test('welcome steps redirect to calendar for subscribed accounts', function (str
     'plan' => ['app.welcome.plan', 'get'],
     'plan store' => ['app.welcome.plan.store', 'post'],
 ]);
-
-test('welcome redirects generic-trial accounts with app access to calendar', function () {
-    config(['trypost.billing.require_card_for_trial' => false]);
-
-    $this->user->account->forceFill([
-        'trial_ends_at' => now()->addDays(8),
-    ])->save();
-
-    expect($this->user->account->fresh()->hasAppAccess())->toBeTrue()
-        ->and($this->user->account->fresh()->subscribed(Account::SUBSCRIPTION_NAME))->toBeFalse();
-
-    $this->actingAs($this->user->fresh())
-        ->get(route('app.welcome.persona'))
-        ->assertRedirect(route('app.calendar'));
-});
 
 test('welcome steps redirect to calendar in self hosted mode', function (string $routeName, string $method, array $payload = []) {
     config(['trypost.self_hosted' => true]);
@@ -631,7 +600,7 @@ test('subscription required screen renders for members without app access', func
 test('subscription required screen sends owners back to the welcome flow', function () {
     $this->actingAs($this->user)
         ->get(route('app.welcome.subscription-required'))
-        ->assertRedirect(route('app.welcome.persona'));
+        ->assertRedirect(route('app.welcome.plan'));
 });
 
 test('subscription required screen sends subscribed users to the calendar', function () {
@@ -695,3 +664,210 @@ function attachCurrentWorkspace(User $user): Workspace
 
     return $workspace;
 }
+
+test('the plan step sends the current offer', function () {
+    completeWelcomeThroughSoftware($this->user);
+    $offer = Offer::factory()->create(['slug' => 'black-friday-2026']);
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+
+    $this->actingAs($this->user->fresh())
+        ->get(route('app.welcome.plan'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('offer.key', 'black_friday_2026')
+            ->where('offer.has_banner', false)
+            ->where('offer.has_checkout_copy', false)
+        );
+});
+
+test('the plan step sends no offer once it expired', function () {
+    completeWelcomeThroughSoftware($this->user);
+    $offer = Offer::factory()->create(['ends_at' => now()->addHour()]);
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+
+    $this->travel(2)->hours();
+
+    $this->actingAs($this->user->fresh())
+        ->get(route('app.welcome.plan'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('offer', null)
+        );
+});
+
+test('plan store hands checkout the offer it tracked', function () {
+    completeWelcomeThroughSoftware($this->user);
+    Plan::where('slug', Slug::Socials)->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
+    $offer = Offer::factory()->create();
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+
+    $this->mock(StartSubscriptionCheckout::class)
+        ->shouldReceive('redirect')
+        ->once()
+        ->withArgs(fn ($account, $priceId, $cancelUrl, $plan, $checkoutOffer = null): bool => $checkoutOffer?->is($offer) === true)
+        ->andReturn(redirect('https://checkout.stripe.test/session'));
+
+    $this->actingAs($this->user->fresh())
+        ->post(route('app.welcome.plan.store'))
+        ->assertRedirect('https://checkout.stripe.test/session');
+});
+
+test('the plan step sends the banner only for an offer that shows one', function () {
+    app('translator')->addLines([
+        'offers.black_friday_2026.name' => 'Black Friday',
+        'offers.black_friday_2026.headline' => '50% off your first 3 months',
+    ], 'en');
+    completeWelcomeThroughSoftware($this->user);
+    $this->user->account->offers()->attach(Offer::factory()->create(['slug' => 'black-friday-2026']), ['claimed_at' => now()]);
+
+    $this->actingAs($this->user->fresh())
+        ->get(route('app.welcome.plan'))
+        ->assertInertia(fn ($page) => $page->where('offer.has_banner', false));
+});
+
+test('the plan step sends the offer copy only when it exists in the user\'s language', function (string $locale, bool $hasCopy) {
+    app('translator')->addLines([
+        'offers.black_friday_2026.name' => 'Black Friday',
+        'offers.black_friday_2026.headline' => '50% off your first 3 months',
+        'offers.black_friday_2026.price' => '$9.50',
+        'offers.black_friday_2026.unit' => '/month',
+        'offers.black_friday_2026.period' => 'for your first 3 months',
+        'offers.black_friday_2026.checkout_button' => 'Activate my account',
+    ], 'en');
+    completeWelcomeThroughSoftware($this->user);
+    $this->user->update(['locale' => $locale]);
+    $this->user->account->offers()->attach(Offer::factory()->withBanner()->create(['slug' => 'black-friday-2026']), ['claimed_at' => now()]);
+
+    $this->actingAs($this->user->fresh())
+        ->get(route('app.welcome.plan'))
+        ->assertInertia(fn ($page) => $page
+            ->where('offer.has_banner', $hasCopy)
+            ->where('offer.has_checkout_copy', $hasCopy)
+            ->where('offer.has_unit', $hasCopy)
+        );
+})->with([
+    'english copy for an english user' => ['en', true],
+    'english copy only for a portuguese user' => ['pt-BR', false],
+]);
+
+test('a trial without a card starts in the app, without Stripe', function () {
+    config(['services.posthog.enabled' => true, 'services.posthog.api_key' => 'phc_test']);
+    Bus::fake();
+    completeWelcomeThroughSoftware($this->user);
+    Plan::where('slug', Slug::Socials)->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
+    $offer = Offer::factory()->trial(7)->withoutCard()->create(['slug' => 'ft7dnc']);
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+
+    $this->mock(StartSubscriptionCheckout::class)->shouldReceive('redirect')->never();
+
+    $this->actingAs($this->user->fresh())
+        ->post(route('app.welcome.plan.store'))
+        ->assertRedirect(route('app.billing.processing', ['from' => 'welcome']));
+
+    $account = $this->user->account->fresh();
+
+    expect($account->plan->slug)->toBe(Slug::Socials)
+        ->and($account->trial_ends_at->toDateString())->toBe(now()->addDays(7)->toDateString())
+        ->and($account->hasAppAccess())->toBeTrue()
+        ->and($account->stripe_id)->toBeNull()
+        ->and($account->offers()->first()->pivot->redeemed_at)->not->toBeNull();
+
+    Bus::assertDispatched(CaptureAccountEvent::class, fn (CaptureAccountEvent $job): bool => $job->event === TrialEvent::Started
+        && $job->properties['offer'] === 'ft7dnc');
+    Bus::assertDispatched(SyncUser::class, fn (SyncUser $job): bool => $job->userId === (string) $this->user->id);
+    Bus::assertNotDispatched(CaptureAccountEvent::class, fn (CaptureAccountEvent $job): bool => $job->event === CheckoutEvent::Started);
+});
+
+test('a second submit does not start the trial without a card again', function () {
+    config(['services.posthog.enabled' => true, 'services.posthog.api_key' => 'phc_test']);
+    Bus::fake();
+    completeWelcomeThroughSoftware($this->user);
+    $socials = Plan::where('slug', Slug::Socials)->firstOrFail();
+    $socials->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
+    $offer = Offer::factory()->trial(7)->withoutCard()->create(['slug' => 'ft7dnc']);
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+
+    StartGenericTrial::execute($this->user->fresh(), $socials, $offer);
+    StartGenericTrial::execute($this->user->fresh(), $socials, $offer);
+
+    Bus::assertDispatchedTimes(CaptureAccountEvent::class, 1);
+});
+
+test('a trial without a card whose last place went opens the full price checkout instead of a free trial', function () {
+    completeWelcomeThroughSoftware($this->user);
+    Plan::where('slug', Slug::Socials)->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
+    $offer = Offer::factory()->trial(7)->withoutCard()->limitedTo(1)->create();
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+    Account::factory()->create()->offers()->attach($offer, ['claimed_at' => now(), 'redeemed_at' => now()]);
+
+    $this->mock(StartSubscriptionCheckout::class)
+        ->shouldReceive('redirect')
+        ->once()
+        ->withArgs(fn ($account, $priceId, $cancelUrl, $plan, $checkoutOffer = null): bool => blank($checkoutOffer))
+        ->andReturn(redirect('https://checkout.stripe.test/session'));
+
+    $this->actingAs($this->user->fresh())
+        ->post(route('app.welcome.plan.store'))
+        ->assertRedirect('https://checkout.stripe.test/session');
+
+    expect($this->user->account->fresh()->trial_ends_at)->toBeNull()
+        ->and($this->user->account->fresh()->hasAppAccess())->toBeFalse();
+});
+
+test('an offer that ends before the plan is submitted opens the full price checkout', function () {
+    completeWelcomeThroughSoftware($this->user);
+    Plan::where('slug', Slug::Socials)->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
+    $offer = Offer::factory()->create(['ends_at' => now()->addHour()]);
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+
+    $this->travel(2)->hours();
+
+    $this->mock(StartSubscriptionCheckout::class)
+        ->shouldReceive('redirect')
+        ->once()
+        ->withArgs(fn ($account, $priceId, $cancelUrl, $plan, $checkoutOffer = null): bool => blank($checkoutOffer))
+        ->andReturn(redirect('https://checkout.stripe.test/session'));
+
+    $this->actingAs($this->user->fresh())
+        ->post(route('app.welcome.plan.store'))
+        ->assertRedirect('https://checkout.stripe.test/session');
+});
+
+test('when a trial without a card ends the owner loses access and is back at the plan step', function () {
+    completeWelcomeThroughSoftware($this->user);
+    $socials = Plan::where('slug', Slug::Socials)->firstOrFail();
+    $offer = Offer::factory()->trial(7)->withoutCard()->create();
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+    StartGenericTrial::execute($this->user->fresh(), $socials, $offer);
+
+    $this->travel(8)->days();
+
+    expect($this->user->account->fresh()->hasAppAccess())->toBeFalse();
+
+    $this->actingAs($this->user->fresh())
+        ->get(route('app.calendar'))
+        ->assertRedirect(route('app.welcome.plan'));
+
+    $this->actingAs($this->user->fresh())
+        ->get(route('app.welcome.plan'))
+        ->assertInertia(fn ($page) => $page->where('offer', null));
+});
+
+test('an owner on a trial without a card never reaches checkout or a second trial from Welcome', function () {
+    completeWelcomeThroughSoftware($this->user);
+    $socials = Plan::where('slug', Slug::Socials)->firstOrFail();
+    $socials->update(['stripe_monthly_price_id' => 'price_socials_monthly']);
+    $offer = Offer::factory()->trial(7)->withoutCard()->create();
+    $this->user->account->offers()->attach($offer, ['claimed_at' => now()]);
+    StartGenericTrial::execute($this->user->fresh(), $socials, $offer);
+    $trialEndsAt = $this->user->account->fresh()->trial_ends_at;
+    $this->user->account->offers()->attach(Offer::factory()->trial(14)->withoutCard()->create(), ['claimed_at' => now()->addMinute()]);
+
+    $this->mock(StartSubscriptionCheckout::class)->shouldReceive('redirect')->never();
+
+    $this->actingAs($this->user->fresh())
+        ->post(route('app.welcome.plan.store'))
+        ->assertRedirect(route('app.calendar'));
+
+    expect($this->user->account->fresh()->trial_ends_at->equalTo($trialEndsAt))->toBeTrue();
+});

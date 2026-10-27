@@ -5,32 +5,42 @@ import { computed, onMounted, ref, watch } from 'vue';
 
 import { useBelowBreakpoint } from '@/composables/useBreakpoint';
 import AuthSplitLayout from '@/layouts/auth/AuthSplitLayout.vue';
+import { index as billingIndex } from '@/routes/app/billing';
 import { index as postsIndex } from '@/routes/app/posts';
 import { mcp } from '@/routes/app/welcome';
 import type { SharedData } from '@/types';
 
 const props = defineProps<{
-    subscriptionActive: boolean;
+    ready: boolean;
+    returnsToBilling: boolean;
 }>();
 
 const page = usePage<SharedData>();
 
 // Poll `auth` so `auth.plan` is set after the webhook writes plan_id.
 const { stop } = usePoll(2000, {
-    only: ['subscriptionActive', 'auth'],
+    only: ['ready', 'auth'],
 });
 
 const finishing = ref(false);
 
 const purchaseReady = computed(
-    (): boolean => props.subscriptionActive && page.props.auth.plan !== null,
+    (): boolean => props.ready && page.props.auth.plan !== null,
 );
 
 const isPhone = useBelowBreakpoint('sm');
 
 /** Connecting an AI is a desktop task, so phones go straight to the schedule. */
 const goNext = (): void => {
-    router.visit(isPhone.value ? postsIndex.url() : mcp.url());
+    if (props.returnsToBilling) {
+        router.visit(billingIndex.url(), { replace: true });
+
+        return;
+    }
+
+    router.visit(isPhone.value ? postsIndex.url() : mcp.url(), {
+        replace: true,
+    });
 };
 
 // Card-required trials are already `subscribed()` (`trialing`) on first paint.

@@ -47,10 +47,9 @@ return [
     ],
     'plan_title' => 'فعّل حسابك',
     'plan_description' => 'اربط حساباتك وجدول أول منشور لك اليوم.',
-    'plan_first_month' => 'للشهر الأول',
-    'plan_terms' => 'ثم :price/شهر. ألغِ في أي وقت.',
-    'plan_per_month' => 'شهريًا',
-    'plan_cancel_anytime' => 'ألغِ في أي وقت.',
+    'plan_terms' => 'ثم :price/شهر. ألغِ في أي وقت',
+    'plan_checkout_button' => 'فعّل حسابي',
+    'plan_cancel_anytime' => 'ألغِ في أي وقت',
     'mcp' => [
         'title' => 'أدِر حساباتك الاجتماعية من الدردشة',
         'description' => 'أنشئ منشوراتك في TryPost وجدولها وحللها باستخدام ذكائك الاصطناعي المفضل.',

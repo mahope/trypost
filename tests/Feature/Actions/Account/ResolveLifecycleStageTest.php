@@ -76,9 +76,7 @@ test('a paying account keeps its stage while past due or cancelled on its grace 
     'cancelled on its grace period' => ['active', true],
 ]);
 
-test('a generic trial without a card and without channels is onboarding', function () {
-    config(['trypost.billing.require_card_for_trial' => false]);
-
+test('a trial without a card and without channels is onboarding', function () {
     $account = Account::factory()->create(['trial_ends_at' => now()->addDays(5)]);
 
     expect(ResolveLifecycleStage::execute($account->load('subscriptions'), null, false))->toBe(LifecycleStage::Onboarding);

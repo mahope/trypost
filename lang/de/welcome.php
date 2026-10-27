@@ -47,10 +47,9 @@ return [
     ],
     'plan_title' => 'Aktiviere dein Konto',
     'plan_description' => 'Verbinde deine Kanäle und plane noch heute deinen ersten Post.',
-    'plan_first_month' => 'im ersten Monat',
-    'plan_terms' => 'Danach :price/Monat. Jederzeit kündbar.',
-    'plan_per_month' => 'pro Monat',
-    'plan_cancel_anytime' => 'Jederzeit kündbar.',
+    'plan_terms' => 'Danach :price/Monat. Jederzeit kündbar',
+    'plan_checkout_button' => 'Mein Konto aktivieren',
+    'plan_cancel_anytime' => 'Jederzeit kündbar',
     'mcp' => [
         'title' => 'Social Media per Chat steuern',
         'description' => 'Erstelle, plane und analysiere Posts in TryPost mit deiner Lieblings-KI.',

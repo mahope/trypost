@@ -47,10 +47,9 @@ return [
     ],
     'plan_title' => 'Activeer je account',
     'plan_description' => 'Koppel je kanalen en plan vandaag je eerste post.',
-    'plan_first_month' => 'voor de eerste maand',
-    'plan_terms' => 'Daarna :price/maand. Altijd opzegbaar.',
-    'plan_per_month' => 'per maand',
-    'plan_cancel_anytime' => 'Altijd opzegbaar.',
+    'plan_terms' => 'Daarna :price/maand. Altijd opzegbaar',
+    'plan_checkout_button' => 'Mijn account activeren',
+    'plan_cancel_anytime' => 'Altijd opzegbaar',
     'mcp' => [
         'title' => 'Beheer je socials via chat',
         'description' => 'Maak, plan en analyseer posts in TryPost met je favoriete AI.',

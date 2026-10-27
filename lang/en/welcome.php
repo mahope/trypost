@@ -47,10 +47,9 @@ return [
     ],
     'plan_title' => 'Activate your account',
     'plan_description' => 'Connect your channels and schedule your first post today.',
-    'plan_first_month' => 'for your first month',
-    'plan_terms' => 'Then :price/month. Cancel anytime.',
-    'plan_per_month' => 'per month',
-    'plan_cancel_anytime' => 'Cancel anytime.',
+    'plan_terms' => 'Then :price/month. Cancel anytime',
+    'plan_checkout_button' => 'Activate my account',
+    'plan_cancel_anytime' => 'Cancel anytime',
     'mcp' => [
         'title' => 'Run your social media from a chat',
         'description' => 'Create, schedule and analyze your TryPost posts with your favorite AI.',
