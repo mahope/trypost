@@ -49,7 +49,7 @@ class ImportExternalPosts
     {
         $limit = (int) config('trypost.external_posts.import_limit');
 
-        if ($limit < 1 || ! $account->platform->isIncludedInAnalytics()) {
+        if ($limit < 1 || ! $account->platform->hasPublicationHistory()) {
             return [];
         }
 

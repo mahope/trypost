@@ -73,7 +73,7 @@ test('connectable options expose each network capabilities for the details view'
     expect(data_get($options, 'x.analytics'))->toBeTrue()
         ->and(data_get($options, 'x.text_only'))->toBeTrue()
         ->and(data_get($options, 'x.media_types'))->toBe(['image', 'video'])
-        ->and(data_get($options, 'linkedin.analytics'))->toBeFalse()
+        ->and(data_get($options, 'linkedin.analytics'))->toBeTrue()
         ->and(data_get($options, 'linkedin.media_types'))->toBe(['image', 'video', 'document'])
         ->and(data_get($options, 'tiktok.text_only'))->toBeFalse()
         ->and(data_get($options, 'tiktok.media_types'))->toBe(['image', 'video'])

@@ -283,13 +283,13 @@ test('a broken publication is reported and the rest of the page still imports', 
     Exceptions::assertReported(ValueError::class);
 });
 
-test('platforms excluded from analytics never import', function () {
-    $account = SocialAccount::factory()->linkedin()->create();
+test('platforms without a publication history never import', function (string $state) {
+    $account = SocialAccount::factory()->{$state}()->create();
     externalPublication($account);
 
     expect(ImportExternalPosts::execute($account))->toBe([])
         ->and(Post::query()->imported()->count())->toBe(0);
-});
+})->with(['linkedin', 'linkedinPage']);
 
 test('an account only imports its own workspace publications', function () {
     $ours = SocialAccount::factory()->instagram()->create();
