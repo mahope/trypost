@@ -480,7 +480,8 @@ return [
             'api' => env('LINKEDIN_API', 'https://api.linkedin.com'),
             // OAuth host is different from the data API (api.linkedin.com).
             'oauth_api' => env('LINKEDIN_OAUTH_API', 'https://www.linkedin.com'),
-            // Scopes for LinkedIn authentication
+            // Scopes for LinkedIn authentication. Append r_member_postAnalytics only once
+            // LinkedIn approves the Community Management API for the app (see .env.example).
             'scopes' => array_values(array_filter(array_map('trim', explode(',', (string) env('LINKEDIN_SCOPES', 'openid,profile,email,w_member_social'))))),
         ],
         'linkedin-page' => [

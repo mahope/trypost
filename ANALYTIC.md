@@ -2,7 +2,7 @@
 
 Este documento descreve as métricas que o TryPost consegue consultar atualmente por conta e por publicação.
 
-> Este é um inventário do comportamento atual, anterior ao novo módulo. O desenho aprovado está em `docs/superpowers/specs/2026-09-23-workspace-follower-analytics-design.md` e o plano executável está em `docs/superpowers/plans/2026-09-23-workspace-analytics-backfill.md`. Na V1 nova, LinkedIn, Telegram, Discord e Google Business Profile ficam fora de todas as superfícies de analytics; LinkedIn fica planejado para V2.
+> Este é um inventário do comportamento atual, anterior ao novo módulo. O desenho aprovado está em `docs/superpowers/specs/2026-09-23-workspace-follower-analytics-design.md` e o plano executável está em `docs/superpowers/plans/2026-09-23-workspace-analytics-backfill.md`. Na V1 nova, LinkedIn Page, Telegram, Discord e Google Business Profile ficam fora de todas as superfícies de analytics. O LinkedIn pessoal entra com métricas por publicação dos posts publicados pelo TryPost (sem seguidores e sem importar posts antigos).
 
 | Rede / integração | Métricas por conta | Métricas por publicação | Observações |
 | --- | --- | --- | --- |
@@ -11,7 +11,7 @@ Este documento descreve as métricas que o TryPost consegue consultar atualmente
 | Threads | Visualizações; curtidas; respostas; reposts; citações | Visualizações; curtidas; respostas; reposts; citações | Disponível no painel por conta e no detalhe da publicação. |
 | Facebook Page | Alcance da página; alcance dos posts; engajamento dos posts; novos seguidores; visualizações da página | **Feed:** impressões, alcance, curtidas e cliques.<br>**Story:** impressões, alcance, interações, reações, respostas e compartilhamentos.<br>**Vídeo/Reel:** reproduções, reações e interações. | As métricas disponíveis dependem do tipo e do identificador da publicação. |
 | X | Impressões; curtidas; reposts; respostas; citações; bookmarks | Impressões; curtidas; reposts; respostas; citações; bookmarks | A consulta da conta soma as métricas dos posts encontrados no período, com limite de 100 dias e de cinco páginas de resultados. |
-| LinkedIn — perfil pessoal | Não disponível no painel por conta | Curtidas; comentários | A API usada pela integração de perfil pessoal não fornece ao TryPost o conjunto completo de analytics disponível para páginas. |
+| LinkedIn — perfil pessoal | Não disponível (as permissões de membro não fornecem seguidores) | Reações; comentários. Com `r_member_postAnalytics`: impressões, membros alcançados, reações, comentários e reposts; taxa de engajamento quando há alcance | Só os posts publicados pelo TryPost: nenhuma API lista os posts de um membro, então não há backfill nem importação. `r_member_postAnalytics` exige o produto Community Management API aprovado no app do LinkedIn; adicione-o em `LINKEDIN_SCOPES` e reconecte o perfil. Sem ele, ou se o LinkedIn recusar, lê `/v2/socialActions`. |
 | LinkedIn — página de empresa | Visualizações da página; novos seguidores orgânicos; novos seguidores pagos; impressões; cliques; curtidas; comentários; compartilhamentos | Impressões; cliques; curtidas; comentários; compartilhamentos | Métricas com valor zero podem ser omitidas no painel por conta. |
 | Pinterest | Impressões; cliques no Pin; engajamentos; salvamentos; taxa média de clique | Impressões; salvamentos; cliques no Pin; cliques externos; visualizações de vídeo | A consulta por publicação usa uma janela fixa dos últimos 90 dias. |
 | YouTube Shorts | Visualizações; minutos assistidos; duração média da visualização; percentual médio assistido; inscritos ganhos; inscritos perdidos; curtidas | Visualizações; minutos assistidos; duração média da visualização; curtidas; comentários; compartilhamentos | As métricas da publicação são consultadas desde a data de publicação até o dia atual. |
@@ -23,7 +23,7 @@ Este documento descreve as métricas que o TryPost consegue consultar atualmente
 
 ## Disponibilidade atual
 
-O painel geral de analytics permite selecionar contas de TikTok, Instagram, Threads, Facebook, X, LinkedIn Page, Pinterest, YouTube, Telegram e Google Business Profile.
+O painel geral de analytics permite selecionar contas de TikTok, Instagram, Threads, Facebook, X, LinkedIn (perfil pessoal), Pinterest, YouTube, Telegram e Google Business Profile.
 
 LinkedIn pessoal, Bluesky e Mastodon possuem apenas métricas por publicação. O Discord também possui métricas implementadas por publicação e uma métrica de conta, mas ainda não aparece no painel geral.
 
