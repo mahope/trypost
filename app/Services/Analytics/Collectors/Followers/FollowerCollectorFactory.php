@@ -11,7 +11,7 @@ class FollowerCollectorFactory
 {
     public function supports(Platform $platform): bool
     {
-        return $platform->isIncludedInAnalytics();
+        return $platform->hasFollowerAnalytics();
     }
 
     public function for(Platform $platform): AbstractFollowerCollector

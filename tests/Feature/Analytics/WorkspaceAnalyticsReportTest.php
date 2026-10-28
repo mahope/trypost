@@ -79,7 +79,7 @@ test('workspace report keeps accounts separate and aggregates only latest normal
     $instagramA = analyticsReportAccount($workspace, Platform::Instagram);
     $instagramB = analyticsReportAccount($workspace, Platform::Instagram);
     $x = analyticsReportAccount($workspace, Platform::X);
-    $linkedIn = analyticsReportAccount($workspace, Platform::LinkedIn);
+    $linkedInPage = analyticsReportAccount($workspace, Platform::LinkedInPage);
     $foreign = analyticsReportAccount(Workspace::factory()->create(), Platform::Instagram);
 
     foreach ([[$instagramA, 95], [$instagramB, 19], [$x, 45]] as [$account, $followers]) {
@@ -88,7 +88,7 @@ test('workspace report keeps accounts separate and aggregates only latest normal
     analyticsReportFollower($instagramA, '2026-09-10', 100);
     analyticsReportFollower($instagramB, '2026-09-10', 20, ObservationProvenance::CarriedForward);
     analyticsReportFollower($x, '2026-09-10', 50);
-    analyticsReportFollower($linkedIn, '2026-09-10', 1000);
+    analyticsReportFollower($linkedInPage, '2026-09-10', 1000);
     analyticsReportFollower($foreign, '2026-09-10', 999);
 
     $first = analyticsReportPublication($instagramA, '2026-09-05 10:00:00', 10, 2, 12, 100);
@@ -103,7 +103,7 @@ test('workspace report keeps accounts separate and aggregates only latest normal
     analyticsReportPublication($instagramB, '2026-09-06 10:00:00', 5, 1, 6, 900);
     analyticsReportPublication($x, '2026-09-07 10:00:00', null, 0, null, null);
     analyticsReportPublication($instagramA, '2026-08-25 10:00:00', 2, 1, 3, 30);
-    analyticsReportPublication($linkedIn, '2026-09-05 10:00:00', 900, 900, 900, 1);
+    analyticsReportPublication($linkedInPage, '2026-09-05 10:00:00', 900, 900, 900, 1);
     analyticsReportPublication($foreign, '2026-09-05 10:00:00', 900, 900, 900, 1);
 
     $report = app(BuildWorkspaceAnalyticsReport::class)->execute(
@@ -394,7 +394,7 @@ test('publication detail remains scoped to the post workspace and excludes unsup
 
     expect(app(ReadPublicationAnalytics::class)->latestFor($post)['available'])->toBeFalse();
 
-    $post->update(['platform' => Platform::LinkedIn]);
+    $post->update(['platform' => Platform::LinkedInPage]);
     expect(app(ReadPublicationAnalytics::class)->latestFor($post)['reason'])->toBe('platform_not_supported');
 });
 

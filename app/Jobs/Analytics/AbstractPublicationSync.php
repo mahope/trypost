@@ -81,7 +81,7 @@ abstract class AbstractPublicationSync implements ShouldQueue
     ): void {
         $channel = SocialAccount::query()
             ->connected()
-            ->includedInAnalytics()
+            ->withPublicationHistory()
             ->find($this->socialAccountId);
 
         if (! $channel?->workspace->account->hasAppAccess() || ! $this->mayStart($channel)) {

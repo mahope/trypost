@@ -60,7 +60,7 @@ test('metric job writes a daily snapshot once and never calls providers for excl
     $date = CarbonImmutable::parse('2026-09-23 12:00:00', 'UTC');
     CarbonImmutable::setTestNow($date);
     $included = metricJobPublication(Platform::Mastodon, $date->subDay());
-    $excluded = metricJobPublication(Platform::LinkedIn, $date->subDay());
+    $excluded = metricJobPublication(Platform::LinkedInPage, $date->subDay());
     Http::fake(['*' => Http::response(['favourites_count' => 0, 'replies_count' => 2])]);
 
     $job = new CollectPublicationMetrics($included->id, $date->toDateString());
@@ -263,7 +263,7 @@ test('daily dispatcher includes old publications without a baseline and excludes
         ]);
     }
 
-    metricJobPublication(Platform::LinkedIn, $date->subDay());
+    metricJobPublication(Platform::LinkedInPage, $date->subDay());
     $old = metricJobPublication(Platform::Mastodon, $date->subDays(31));
     $expiredStory = metricJobPublication(Platform::Instagram, $date->subDays(31));
     $expiredStory->update(['content_type' => PublicationContentType::Story]);

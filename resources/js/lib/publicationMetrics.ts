@@ -4,7 +4,13 @@ import { formatNumberCompact, formatPercent } from '@/lib/utils';
 import type { PublicationMetricFact } from '@/types/analytics';
 
 /** Networks whose native name for a re-share is "repost"; stored as `shares`. */
-const REPOST_NETWORKS = new Set(['x', 'threads', 'mastodon', 'bluesky']);
+const REPOST_NETWORKS = new Set([
+    'x',
+    'threads',
+    'mastodon',
+    'bluesky',
+    'linkedin',
+]);
 
 export const publicationMetricLabel = (
     metricKey: string,
@@ -119,6 +125,17 @@ const NETWORK_METRICS: Record<
         ],
     },
     mastodon: { metrics: ['reactions', 'comments', 'shares'] },
+    // Impressions, reach and reposts only come with `r_member_postAnalytics`.
+    linkedin: {
+        metrics: [
+            'reactions',
+            'comments',
+            'engagement_rate',
+            'impressions',
+            'reach',
+            'shares',
+        ],
+    },
     bluesky: { metrics: ['reactions', 'comments', 'shares', 'quotes'] },
     pinterest: {
         metrics: [

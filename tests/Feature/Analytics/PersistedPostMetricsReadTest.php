@@ -77,7 +77,7 @@ test('REST and MCP post metrics read the same persisted observation without a pr
 test('excluded destinations expose no analytics and a foreign post cannot be read', function () {
     Queue::fake([BootstrapAccountAnalytics::class, CollectAccountDailySnapshot::class]);
     $access = createApiTestToken();
-    $account = SocialAccount::factory()->create(['workspace_id' => $access['workspace']->id, 'platform' => Platform::LinkedIn]);
+    $account = SocialAccount::factory()->create(['workspace_id' => $access['workspace']->id, 'platform' => Platform::LinkedInPage]);
     $post = Post::factory()->forAccount($account)->published()->create(['user_id' => $access['user']->id]);
 
     TryPostServer::actingAs($access['user'])

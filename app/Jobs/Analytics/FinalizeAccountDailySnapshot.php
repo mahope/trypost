@@ -52,7 +52,7 @@ class FinalizeAccountDailySnapshot implements ShouldQueue
     ): void {
         $channel = SocialAccount::query()
             ->connected()
-            ->includedInAnalytics()
+            ->withFollowerAnalytics()
             ->find($this->socialAccountId);
 
         if (! $channel?->workspace->account->hasAppAccess()) {

@@ -603,4 +603,14 @@ class SocialAccount extends Model
     {
         return $query->whereIn('platform', SocialPlatform::analyticsValues());
     }
+
+    public function scopeWithFollowerAnalytics(Builder $query): Builder
+    {
+        return $query->whereIn('platform', SocialPlatform::followerAnalyticsValues());
+    }
+
+    public function scopeWithPublicationHistory(Builder $query): Builder
+    {
+        return $query->whereIn('platform', SocialPlatform::publicationHistoryValues());
+    }
 }

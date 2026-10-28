@@ -305,15 +305,15 @@ test('an unknown or injected sort is a validation error', function (string $sort
 })->with(['bogus', 'views;drop']);
 
 test('an unsupported channel renders without a report or publications', function () {
-    $linkedin = SocialAccount::factory()->linkedin()->create(['workspace_id' => $this->workspace->id]);
+    $linkedinPage = SocialAccount::factory()->linkedinPage()->create(['workspace_id' => $this->workspace->id]);
 
     $this->actingAs($this->user)
-        ->get(route('app.channels.insights', $linkedin))
+        ->get(route('app.channels.insights', $linkedinPage))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('channels/Insights')
             ->where('supported', false)
-            ->where('channel.id', $linkedin->id)
+            ->where('channel.id', $linkedinPage->id)
             ->missing('report')
             ->missing('publications'));
 });

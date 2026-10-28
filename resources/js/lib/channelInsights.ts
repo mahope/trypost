@@ -14,6 +14,7 @@ export const showsPostTypeFilter = (platform: string): boolean => {
         case Platform.YouTube:
         case Platform.Bluesky:
         case Platform.Mastodon:
+        case Platform.LinkedIn:
         default:
             return false;
     }

@@ -13,7 +13,6 @@ use App\Events\PostStatusChanged;
 use App\Jobs\Analytics\SyncTryPostPublication;
 use App\Jobs\PostHog\SyncAccountPublishingActivity;
 use App\Models\Post;
-use App\Services\Analytics\Collectors\Followers\FollowerCollectorFactory;
 use App\Services\PostHogService;
 use Illuminate\Support\Facades\DB;
 
@@ -65,7 +64,7 @@ class PostObserver
         rescue(function () use ($post): void {
             $account = $post->loadMissing('socialAccount')->socialAccount;
 
-            if (blank($account) || ! app(FollowerCollectorFactory::class)->supports($post->platform)) {
+            if (blank($account) || ! $post->platform?->isIncludedInAnalytics()) {
                 return;
             }
 

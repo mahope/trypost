@@ -36,7 +36,7 @@ class BuildFollowerAnalyticsReport
             ->where('workspace_id', $workspace->id)
             ->when($channelKeys !== null, fn (EloquentBuilder $accounts): EloquentBuilder => $accounts->whereKey(array_keys($channelKeys)))
             ->connected()
-            ->includedInAnalytics()
+            ->withFollowerAnalytics()
             ->where('created_at', '<=', $current->observedThrough->endOfDay())
             ->get(['platform', 'platform_user_id', 'created_at']);
         $currentTotal = $this->total($latestCurrent, $current->observedThrough, $connectedAccounts);

@@ -64,7 +64,7 @@ class ListAvailableChannelMetrics
      */
     public function series(SocialAccount $channel, ?string $accountKey = null, ?array $availability = null): array
     {
-        $availability = [...($availability ?? $this->availability($channel, $accountKey)), 'net_followers' => true];
+        $availability = [...($availability ?? $this->availability($channel, $accountKey)), 'net_followers' => $channel->platform->hasFollowerAnalytics()];
 
         return array_values(array_filter(self::SERIES, fn (string $metric): bool => (bool) data_get($availability, $metric, false)));
     }
@@ -82,7 +82,7 @@ class ListAvailableChannelMetrics
         $counts = $query
             ->selectRaw('SUM(CASE WHEN metric.engagement_count IS NOT NULL AND metric.exposure_count > 0 THEN 1 ELSE 0 END) as engagement_rate')
             ->first();
-        $available = ['followers' => true, 'posts' => true];
+        $available = ['followers' => $channel->platform->hasFollowerAnalytics(), 'posts' => true];
 
         foreach ([...array_keys(self::COLUMNS), 'engagement_rate'] as $metric) {
             $available[$metric] = (int) data_get($counts, $metric, 0) > 0;

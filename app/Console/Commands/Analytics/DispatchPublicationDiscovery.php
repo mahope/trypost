@@ -28,7 +28,7 @@ class DispatchPublicationDiscovery extends Command
 
         SocialAccount::query()
             ->connected()
-            ->includedInAnalytics()
+            ->withPublicationHistory()
             ->when($only !== [], fn (Builder $query): Builder => $query->whereIn('platform', $only))
             ->when($except !== [], fn (Builder $query): Builder => $query->whereNotIn('platform', $except))
             ->with(['analyticsSyncStates', 'workspace.account.subscriptions'])

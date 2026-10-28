@@ -34,7 +34,9 @@ class DispatchAccountAnalytics
                 )->afterCommit();
             }
 
-            BootstrapAccountAnalytics::dispatch($connectedChannel->id, true)->afterCommit();
+            if ($connectedChannel->platform->hasPublicationHistory()) {
+                BootstrapAccountAnalytics::dispatch($connectedChannel->id, true)->afterCommit();
+            }
         } catch (Throwable $exception) {
             report($exception);
         }

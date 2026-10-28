@@ -12,7 +12,7 @@ class PublicationHistoryCollectorFactory
 {
     public function supports(Platform $platform): bool
     {
-        return $platform->isIncludedInAnalytics();
+        return $platform->hasPublicationHistory();
     }
 
     public function for(SocialAccount $account): AbstractPublicationHistoryCollector

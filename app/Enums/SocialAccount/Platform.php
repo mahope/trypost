@@ -8,6 +8,7 @@ use App\Enums\Media\Type as MediaType;
 use App\Enums\TikTok\PrivacyLevel;
 use App\Enums\YouTube\Category;
 use App\Support\Hashtags;
+use Closure;
 use Illuminate\Support\Str;
 
 enum Platform: string
@@ -46,10 +47,30 @@ enum Platform: string
     public function isIncludedInAnalytics(): bool
     {
         return match ($this) {
-            self::LinkedIn, self::LinkedInPage, self::Telegram,
+            self::LinkedInPage, self::Telegram,
             self::Discord, self::GoogleBusiness => false,
             default => true,
         };
+    }
+
+    /**
+     * Whether analytics reads the account's follower count each day. LinkedIn
+     * member scopes expose no follower count, so a personal profile is measured
+     * per post only.
+     */
+    public function hasFollowerAnalytics(): bool
+    {
+        return $this->isIncludedInAnalytics() && $this !== self::LinkedIn;
+    }
+
+    /**
+     * Whether analytics can list the account's own posts to discover and
+     * backfill them. No LinkedIn API lists a member's posts with member scopes,
+     * so a personal profile only measures the posts TryPost published.
+     */
+    public function hasPublicationHistory(): bool
+    {
+        return $this->isIncludedInAnalytics() && $this !== self::LinkedIn;
     }
 
     public function reportsPublicationFollows(): bool
@@ -63,9 +84,30 @@ enum Platform: string
     /** @return list<string> */
     public static function analyticsValues(): array
     {
+        return self::valuesWhere(fn (self $platform): bool => $platform->isIncludedInAnalytics());
+    }
+
+    /** @return list<string> */
+    public static function followerAnalyticsValues(): array
+    {
+        return self::valuesWhere(fn (self $platform): bool => $platform->hasFollowerAnalytics());
+    }
+
+    /** @return list<string> */
+    public static function publicationHistoryValues(): array
+    {
+        return self::valuesWhere(fn (self $platform): bool => $platform->hasPublicationHistory());
+    }
+
+    /**
+     * @param  Closure(self): bool  $matches
+     * @return list<string>
+     */
+    private static function valuesWhere(Closure $matches): array
+    {
         return array_values(array_map(
             fn (self $platform): string => $platform->value,
-            array_filter(self::cases(), fn (self $platform): bool => $platform->isIncludedInAnalytics()),
+            array_filter(self::cases(), $matches),
         ));
     }
 
