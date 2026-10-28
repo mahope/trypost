@@ -63,12 +63,22 @@ test('account activity sync is not queued when PostHog is disabled', function ()
 
 test('excluded platform does not queue an analytics publication sync', function () {
     config(['services.posthog.enabled' => false]);
-    $post = Post::factory()->linkedin()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    $post = Post::factory()->telegram()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
     Queue::fake();
 
     $post->markPublicationPublished('remote-post-id');
 
     Queue::assertNotPushed(SyncTryPostPublication::class);
+});
+
+test('a personal linkedin post published through TryPost queues an analytics publication sync', function () {
+    config(['services.posthog.enabled' => false]);
+    $post = Post::factory()->linkedin()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    Queue::fake();
+
+    $post->markPublicationPublished('urn:li:share:7325786486870552578');
+
+    Queue::assertPushed(SyncTryPostPublication::class, fn (SyncTryPostPublication $job): bool => $job->postId === $post->id);
 });
 
 test('updating an already published post does not queue another sync', function () {
