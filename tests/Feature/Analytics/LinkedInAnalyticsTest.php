@@ -193,17 +193,96 @@ test('a refused post analytics read falls back to socialActions', function () {
     Http::assertSentCount(2);
 });
 
-test('a post analytics refusal after a successful read keeps what was measured', function () {
+test('a post analytics refusal after a successful read keeps what was measured and fills reactions and comments from socialActions', function () {
     Http::fake([
         "{$this->api}/rest/memberCreatorPostAnalytics*" => fn (Request $request) => $request->data()['queryType'] === 'IMPRESSION'
             ? Http::response(memberPostAnalyticsResponse('IMPRESSION', 420))
             : Http::response(['status' => 403, 'code' => 'ACCESS_DENIED'], 403),
-        "{$this->api}/v2/socialActions/*" => Http::response(['likesSummary' => ['totalLikes' => 1]]),
+        "{$this->api}/v2/socialActions/*" => Http::response(['likesSummary' => ['totalLikes' => 4]]),
+    ]);
+
+    expect(linkedInMetricValues(linkedInPublication([LinkedInPublicationMetricsCollector::POST_ANALYTICS_SCOPE])))->toEqual([
+        MetricKey::Impressions->value => 420,
+        MetricKey::Reactions->value => 4,
+        MetricKey::Comments->value => 0,
+        MetricKey::Engagements->value => 4,
+    ]);
+    Http::assertSentCount(3);
+});
+
+test('a skipped reaction metric is filled from socialActions without replacing what post analytics measured', function () {
+    $counts = ['IMPRESSION' => 300, 'MEMBERS_REACHED' => 200, 'COMMENT' => 5, 'RESHARE' => 1];
+    Http::fake([
+        "{$this->api}/rest/memberCreatorPostAnalytics*" => fn (Request $request) => array_key_exists($request->data()['queryType'], $counts)
+            ? Http::response(memberPostAnalyticsResponse($request->data()['queryType'], $counts[$request->data()['queryType']]))
+            : Http::response(['status' => 400, 'code' => 'ILLEGAL_ARGUMENT'], 400),
+        "{$this->api}/v2/socialActions/*" => Http::response([
+            'likesSummary' => ['totalLikes' => 11],
+            'commentsSummary' => ['aggregatedTotalComments' => 99],
+        ]),
+    ]);
+
+    expect(linkedInMetricValues(linkedInPublication([LinkedInPublicationMetricsCollector::POST_ANALYTICS_SCOPE])))->toEqual([
+        MetricKey::Impressions->value => 300,
+        MetricKey::Reach->value => 200,
+        MetricKey::Comments->value => 5,
+        MetricKey::Shares->value => 1,
+        MetricKey::Reactions->value => 11,
+        MetricKey::Engagements->value => 17,
+    ]);
+    Http::assertSentCount(6);
+});
+
+test('a refused socialActions fill keeps what post analytics measured', function () {
+    Http::fake([
+        "{$this->api}/rest/memberCreatorPostAnalytics*" => fn (Request $request) => $request->data()['queryType'] === 'IMPRESSION'
+            ? Http::response(memberPostAnalyticsResponse('IMPRESSION', 420))
+            : Http::response(['status' => 403, 'code' => 'ACCESS_DENIED'], 403),
+        "{$this->api}/v2/socialActions/*" => Http::response(['status' => 403, 'code' => 'ACCESS_DENIED'], 403),
     ]);
 
     expect(linkedInMetricValues(linkedInPublication([LinkedInPublicationMetricsCollector::POST_ANALYTICS_SCOPE])))
         ->toEqual([MetricKey::Impressions->value => 420]);
-    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/v2/socialActions/'));
+});
+
+test('a post without any social activity reads as zero reactions and zero comments', function () {
+    Http::preventStrayRequests();
+    Http::fake(["{$this->api}/v2/socialActions/*" => Http::response([])]);
+
+    expect(linkedInMetricValues(linkedInPublication()))->toEqual([
+        MetricKey::Reactions->value => 0,
+        MetricKey::Comments->value => 0,
+        MetricKey::Engagements->value => 0,
+    ]);
+});
+
+test('empty post analytics and an empty socialActions read as zero reactions and zero comments', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        "{$this->api}/rest/memberCreatorPostAnalytics*" => Http::response(['elements' => [], 'paging' => ['count' => 10, 'start' => 0, 'links' => []]]),
+        "{$this->api}/v2/socialActions/*" => Http::response([]),
+    ]);
+
+    expect(linkedInMetricValues(linkedInPublication([LinkedInPublicationMetricsCollector::POST_ANALYTICS_SCOPE])))->toEqual([
+        MetricKey::Reactions->value => 0,
+        MetricKey::Comments->value => 0,
+        MetricKey::Engagements->value => 0,
+    ]);
+    Http::assertSentCount(6);
+});
+
+test('the daily metrics job stores a snapshot of zeros for a post without any social activity', function () {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-10-20 12:00:00', 'UTC'));
+    Http::fake(["{$this->api}/v2/socialActions/*" => Http::response([])]);
+    $publication = linkedInPublication();
+
+    app()->call([new CollectPublicationMetrics($publication->id, '2026-10-20'), 'handle']);
+
+    $snapshot = AnalyticsPublicationDailySnapshot::query()->where('publication_id', $publication->id)->sole();
+    expect($snapshot->reactions_count)->toBe(0)
+        ->and($snapshot->comments_count)->toBe(0)
+        ->and($snapshot->engagement_count)->toBe(0)
+        ->and($publication->refresh()->metric_failures)->toBe(0);
 });
 
 test('a publication id that is not a post urn makes no request', function () {
@@ -250,6 +329,7 @@ test('a socialActions-only snapshot has no exposure, so no engagement rate is de
         ->and($snapshot->exposure_count)->toBeNull();
 });
 
+// Locks in the existing permission handling of CollectPublicationMetrics for the new collector; it passes on main too.
 test('a permission refusal keeps the account connected and is not retried', function () {
     CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-10-20 12:00:00', 'UTC'));
     Http::fake(["{$this->api}/v2/socialActions/*" => Http::response([

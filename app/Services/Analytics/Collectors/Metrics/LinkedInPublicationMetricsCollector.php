@@ -23,7 +23,8 @@ use Illuminate\Support\Facades\Log;
  * edge, which the member publishing token can read. Impressions, members
  * reached and reshares need `r_member_postAnalytics` (Community Management
  * API): only an account whose stored grant includes it reads
- * `memberCreatorPostAnalytics`, and a refusal there falls back to socialActions.
+ * `memberCreatorPostAnalytics`; socialActions fills the reactions and comments
+ * that read did not return.
  *
  * @see https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/network-update-social-actions
  * @see https://learn.microsoft.com/en-us/linkedin/marketing/community-management/members/post-statistics
@@ -53,7 +54,7 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
     public function collect(AnalyticsPublication $publication, CarbonImmutable $date): PublicationMetricObservation
     {
         $account = $this->account($publication);
-        $entityKey = $this->entityKey($publication->remote_id);
+        $entityKey = self::entityKey($publication->remote_id);
 
         if ($entityKey === null) {
             throw AnalyticsCollectionException::unsupported('LinkedIn publication id is not a share or ugcPost URN.');
@@ -61,9 +62,14 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
 
         $metrics = $this->grantsPostAnalytics($account)
             ? $this->postAnalytics($account, $publication->remote_id, $entityKey)
-            : null;
+            : [];
 
-        return $this->observation($date, $this->withEngagements($metrics ?: $this->socialActions($account, $publication->remote_id)));
+        return $this->observation($date, $this->withEngagements($this->withSocialActions($account, $publication->remote_id, $metrics)));
+    }
+
+    public static function isPostUrn(string $remoteId): bool
+    {
+        return self::entityKey($remoteId) !== null;
     }
 
     /**
@@ -77,12 +83,11 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
 
     /**
      * One lifetime total per metric, skipping a metric LinkedIn answers with a
-     * client error. A refusal keeps what was already read; null when LinkedIn
-     * refuses the scope from the first read, so the caller reads socialActions.
+     * client error. A refusal keeps what was already read.
      *
-     * @return list<MetricValue>|null
+     * @return list<MetricValue>
      */
-    private function postAnalytics(SocialAccount $account, string $urn, string $entityKey): ?array
+    private function postAnalytics(SocialAccount $account, string $urn, string $entityKey): array
     {
         $api = rtrim((string) config('trypost.platforms.linkedin.api'), '/');
         $entity = "({$entityKey}:".rawurlencode($urn).')';
@@ -95,7 +100,7 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
                 if ($exception->category === 'permission') {
                     Log::info('analytics.linkedin_post_analytics_refused', ['reason' => $exception->getMessage()]);
 
-                    return $metrics === [] ? null : $this->present($metrics);
+                    return $this->present($metrics);
                 }
 
                 if ($exception->category !== 'malformed' || $exception->gone) {
@@ -135,11 +140,49 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
         return $counts === [] ? null : $this->count($key, [$queryType => array_sum($counts)], $queryType);
     }
 
-    /** @return list<MetricValue> */
+    /**
+     * Fills the reactions and comments post analytics did not return (no
+     * grant, a refusal or a skipped metric) from socialActions, so the card and
+     * the engagement rate stay complete. Once something was measured, a refused
+     * or unreadable socialActions keeps it.
+     *
+     * @param  list<MetricValue>  $metrics
+     * @return list<MetricValue>
+     */
+    private function withSocialActions(SocialAccount $account, string $urn, array $metrics): array
+    {
+        $measured = array_map(fn (MetricValue $metric): MetricKey => $metric->key, $metrics);
+
+        if (in_array(MetricKey::Reactions, $measured, true) && in_array(MetricKey::Comments, $measured, true)) {
+            return $metrics;
+        }
+
+        try {
+            $actions = $this->socialActions($account, $urn);
+        } catch (AnalyticsCollectionException $exception) {
+            if ($metrics === [] || $exception->gone || ! in_array($exception->category, ['permission', 'malformed'], true)) {
+                throw $exception;
+            }
+
+            return $metrics;
+        }
+
+        return [...$metrics, ...array_values(array_filter($actions, fn (MetricValue $metric): bool => ! in_array($metric->key, $measured, true)))];
+    }
+
+    /**
+     * LinkedIn leaves out `likesSummary` / `commentsSummary` for a post nobody
+     * reacted to or commented on, and answers `{}` for one without any activity:
+     * a successful read without them is 0, not a malformed answer.
+     *
+     * @return list<MetricValue>
+     */
     private function socialActions(SocialAccount $account, string $urn): array
     {
         $api = rtrim((string) config('trypost.platforms.linkedin.api'), '/');
         $actions = (array) $this->get($account, "{$api}/v2/socialActions/".rawurlencode($urn))->json();
+        data_fill($actions, 'likesSummary.totalLikes', 0);
+        data_fill($actions, 'commentsSummary.aggregatedTotalComments', 0);
 
         return $this->present([
             $this->count(MetricKey::Reactions, $actions, 'likesSummary.totalLikes'),
@@ -163,7 +206,7 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
             ->get($url));
     }
 
-    private function entityKey(string $urn): ?string
+    private static function entityKey(string $urn): ?string
     {
         foreach (self::ENTITY_KEYS as $prefix => $key) {
             if (str_starts_with($urn, $prefix)) {

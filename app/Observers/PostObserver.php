@@ -8,11 +8,13 @@ use App\Actions\Analytics\ResolveAnalyticsAccountKey;
 use App\Dto\Analytics\TryPostPublicationIdentity;
 use App\Enums\Post\PublishStatus;
 use App\Enums\Post\Status as PostStatus;
+use App\Enums\SocialAccount\Platform;
 use App\Events\PostCreated;
 use App\Events\PostStatusChanged;
 use App\Jobs\Analytics\SyncTryPostPublication;
 use App\Jobs\PostHog\SyncAccountPublishingActivity;
 use App\Models\Post;
+use App\Services\Analytics\Collectors\Metrics\LinkedInPublicationMetricsCollector;
 use App\Services\PostHogService;
 use Illuminate\Support\Facades\DB;
 
@@ -64,7 +66,7 @@ class PostObserver
         rescue(function () use ($post): void {
             $account = $post->loadMissing('socialAccount')->socialAccount;
 
-            if (blank($account) || ! $post->platform?->isIncludedInAnalytics()) {
+            if (blank($account) || ! $post->platform?->isIncludedInAnalytics() || ! $this->hasMeasurableRemoteId($post)) {
                 return;
             }
 
@@ -73,6 +75,17 @@ class PostObserver
                 $post->id,
             )->afterCommit();
         });
+    }
+
+    /**
+     * A LinkedIn post stored without its URN (the publisher keeps `unknown` when
+     * LinkedIn sends no id) cannot be measured, and two of them would share one
+     * publication row.
+     */
+    private function hasMeasurableRemoteId(Post $post): bool
+    {
+        return $post->platform !== Platform::LinkedIn
+            || LinkedInPublicationMetricsCollector::isPostUrn((string) $post->platform_post_id);
     }
 
     private function syncPublishingActivity(Post $post): void

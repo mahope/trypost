@@ -81,6 +81,16 @@ test('a personal linkedin post published through TryPost queues an analytics pub
     Queue::assertPushed(SyncTryPostPublication::class, fn (SyncTryPostPublication $job): bool => $job->postId === $post->id);
 });
 
+test('a personal linkedin post stored without its urn queues no analytics publication sync', function () {
+    config(['services.posthog.enabled' => false]);
+    $post = Post::factory()->linkedin()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
+    Queue::fake();
+
+    $post->markPublicationPublished('unknown');
+
+    Queue::assertNotPushed(SyncTryPostPublication::class);
+});
+
 test('updating an already published post does not queue another sync', function () {
     $post = Post::factory()->linkedin()->published()->create(['workspace_id' => $this->workspace->id, 'user_id' => $this->user->id]);
     Queue::fake();

@@ -56,8 +56,8 @@ class ListAvailableChannelMetrics
     }
 
     /**
-     * Metrics the channel metrics chart can draw: posts and the follower series always, post metrics only
-     * where the network reports them.
+     * Metrics the channel metrics chart can draw: posts always, the follower series only where the network
+     * reports followers (never personal LinkedIn), post metrics only where the network reports them.
      *
      * @param  array<string, bool>|null  $availability  Already resolved through availability() for this request.
      * @return list<string>
