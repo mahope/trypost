@@ -193,6 +193,19 @@ test('a refused post analytics read falls back to socialActions', function () {
     Http::assertSentCount(2);
 });
 
+test('a post analytics refusal after a successful read keeps what was measured', function () {
+    Http::fake([
+        "{$this->api}/rest/memberCreatorPostAnalytics*" => fn (Request $request) => $request->data()['queryType'] === 'IMPRESSION'
+            ? Http::response(memberPostAnalyticsResponse('IMPRESSION', 420))
+            : Http::response(['status' => 403, 'code' => 'ACCESS_DENIED'], 403),
+        "{$this->api}/v2/socialActions/*" => Http::response(['likesSummary' => ['totalLikes' => 1]]),
+    ]);
+
+    expect(linkedInMetricValues(linkedInPublication([LinkedInPublicationMetricsCollector::POST_ANALYTICS_SCOPE])))
+        ->toEqual([MetricKey::Impressions->value => 420]);
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/v2/socialActions/'));
+});
+
 test('a publication id that is not a post urn makes no request', function () {
     Http::preventStrayRequests();
 

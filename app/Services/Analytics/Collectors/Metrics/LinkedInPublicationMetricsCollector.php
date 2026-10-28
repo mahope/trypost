@@ -77,8 +77,8 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
 
     /**
      * One lifetime total per metric, skipping a metric LinkedIn answers with a
-     * client error. Null when LinkedIn refuses the scope after all, so the
-     * caller reads socialActions instead.
+     * client error. A refusal keeps what was already read; null when LinkedIn
+     * refuses the scope from the first read, so the caller reads socialActions.
      *
      * @return list<MetricValue>|null
      */
@@ -95,7 +95,7 @@ class LinkedInPublicationMetricsCollector extends AbstractPublicationMetricsColl
                 if ($exception->category === 'permission') {
                     Log::info('analytics.linkedin_post_analytics_refused', ['reason' => $exception->getMessage()]);
 
-                    return null;
+                    return $metrics === [] ? null : $this->present($metrics);
                 }
 
                 if ($exception->category !== 'malformed' || $exception->gone) {

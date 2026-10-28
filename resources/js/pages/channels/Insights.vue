@@ -180,6 +180,9 @@ watch(selectedTypes, applyFilters, { deep: true });
                         <InsightsSyncStatus
                             :cadence="sync"
                             :coverage="report.coverage"
+                            :followers="
+                                availableMetrics?.includes('followers') ?? true
+                            "
                         />
                         <InsightsExportMenu
                             :query="exportQuery"

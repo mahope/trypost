@@ -16,10 +16,15 @@ import date from '@/date';
 import dayjs from '@/dayjs';
 import type { CoverageRow, InsightsSyncCadence } from '@/types/analytics';
 
-const props = defineProps<{
-    cadence: InsightsSyncCadence;
-    coverage: CoverageRow[];
-}>();
+const props = withDefaults(
+    defineProps<{
+        cadence: InsightsSyncCadence;
+        coverage: CoverageRow[];
+        /** False on a channel whose network reports no follower count (personal LinkedIn). */
+        followers?: boolean;
+    }>(),
+    { followers: true },
+);
 
 const lastSyncedAt = computed<string | null>(() =>
     props.coverage.reduce<string | null>((latest, row) => {
@@ -93,7 +98,7 @@ const lastSyncedAt = computed<string | null>(() =>
                         })
                     }}</span>
                 </li>
-                <li class="flex gap-2.5">
+                <li v-if="followers" class="flex gap-2.5">
                     <IconUsers
                         class="mt-0.5 size-4 shrink-0 text-muted-foreground"
                         aria-hidden="true"
